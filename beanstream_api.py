@@ -9,6 +9,8 @@
 '''
 import requests
 import urlparse
+import urllib
+import hashlib
 
 from trytond.exceptions import UserError
 
@@ -26,7 +28,9 @@ class BeanstreamClient(object):
     #: Service version of the API
     service_version = '1.0'
 
-    def __init__(self, merchant_id, pass_code, test=False):
+    def __init__(
+        self, merchant_id, test=False, pass_code=None, hash_key=None
+    ):
         """
         :param merchant_id: Pass the merchant’s unique Beanstream
                             identification number. Please note that Beanstream
@@ -40,21 +44,37 @@ class BeanstreamClient(object):
             Note that this field is different from the merchantid field
             used in the Beanstream Process Transaction API
 
+        :param test: Boolean to indicate if this is a test request.
         :param pass_code: Specify the API access passcode that has been
                           generated on the payment profile configuration page.
-        :param test: Boolean to indicate if this is a test request.
+        :param hash_key: Specify the Hash Key that has been
+                          saved in Beanstream account.
         """
         self.merchant_id = merchant_id
-        self.pass_code = pass_code
         self.test = test
+
+        if not pass_code and not hash_key:
+            # Atleast one should be there
+            raise UserError(
+                'Beanstream Error:', 'No validation method provided'
+            )
+
+        self.pass_code = pass_code
+        self.hash_key = hash_key
 
     @property
     def payment_profile(self):
-        return PaymentProfileAPI(self.merchant_id, self.pass_code, self.test)
+        return PaymentProfileAPI(
+            self.merchant_id, self.test, pass_code=self.pass_code,
+            hash_key=self.hash_key
+        )
 
     @property
     def transaction(self):
-        return TransactionAPI(self.merchant_id, self.pass_code, self.test)
+        return TransactionAPI(
+            self.merchant_id, self.test, pass_code=self.pass_code,
+            hash_key=self.hash_key
+        )
 
     def request(self, data, silent=False):
         """Send request to beanstream and return the response
@@ -63,12 +83,24 @@ class BeanstreamClient(object):
         """
         if 'merchant_id' not in data:
             data['merchantId'] = self.merchant_id
-        data['passCode'] = self.pass_code
+
         data['responseFormat'] = 'QS'
         data['serviceVersion'] = self.service_version
         data['requestType'] = 'BACKEND'
 
-        result = requests.post(self.service_url, data=data)
+        # Serialize Data
+        data = urllib.urlencode(data)
+
+        if self.pass_code:
+            data += '&passCode=%s' % self.pass_code
+
+        if self.hash_key:
+            hashobj = hashlib.sha1()
+            hashobj.update(data + self.hash_key)
+            hash_value = hashobj.hexdigest()
+            data += '&hashValue=%s' % hash_value
+
+        result = requests.post(self.service_url, params=data)
 
         response = self.make_response(result.content)
 

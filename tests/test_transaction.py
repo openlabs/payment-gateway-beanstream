@@ -171,17 +171,31 @@ class TestTransaction(unittest.TestCase):
             'credit_account': self._get_account_by_kind('expense').id,
         })
 
-        self.beanstream_gateway = self.PaymentGateway(
+        self.beanstream_passcode_gateway = self.PaymentGateway(
             name='beanstream',
             journal=self.cash_journal,
             provider='beanstream',
             method='credit_card',
-            beanstream_merchant_id='300201043',
-            beanstream_pass_code='d076b1a2c67F4A28B26e8bbe75B84FC2',
+            beanstream_auth_mechanism='passcode',
+            beanstream_merchant_id='300200425',
+            beanstream_pass_code='B042485853bb4ee9b8269ADEAF6A60dd',
             beanstream_currency=currency,
             test=True
         )
-        self.beanstream_gateway.save()
+        self.beanstream_passcode_gateway.save()
+
+        self.beanstream_hash_gateway = self.PaymentGateway(
+            name='beanstream',
+            journal=self.cash_journal,
+            provider='beanstream',
+            method='credit_card',
+            beanstream_auth_mechanism='hash',
+            beanstream_merchant_id='300200425',
+            beanstream_hash_key='de59b16d310ace6983af0b0a791c1d318f79ec9d',
+            beanstream_currency=currency,
+            test=True,
+        )
+        self.beanstream_hash_gateway.save()
 
         # Create parties
         self.party1, = self.Party.create([{
@@ -258,7 +272,7 @@ class TestTransaction(unittest.TestCase):
         self.payment_profile = self.PaymentProfile(
             party=self.party1,
             address=self.party1.addresses[0].id,
-            gateway=self.beanstream_gateway.id,
+            gateway=self.beanstream_passcode_gateway.id,
             last_4_digits='1111',
             expiry_month='01',
             expiry_year='2018',
@@ -266,7 +280,7 @@ class TestTransaction(unittest.TestCase):
         )
         self.payment_profile.save()
 
-    def test_0020_test_transaction_capture(self):
+    def test_0020_test_transaction_capture_with_passcode(self):
         """
         Test capture transaction
         """
@@ -278,7 +292,7 @@ class TestTransaction(unittest.TestCase):
                 transaction1, = self.PaymentTransaction.create([{
                     'party': self.party2.id,
                     'address': self.party2.addresses[0].id,
-                    'gateway': self.beanstream_gateway.id,
+                    'gateway': self.beanstream_passcode_gateway.id,
                     'amount': random.randint(6, 10),
                 }])
                 self.assert_(transaction1)
@@ -292,7 +306,7 @@ class TestTransaction(unittest.TestCase):
                 transaction2, = self.PaymentTransaction.create([{
                     'party': self.party1.id,
                     'address': self.party1.addresses[0].id,
-                    'gateway': self.beanstream_gateway.id,
+                    'gateway': self.beanstream_passcode_gateway.id,
                     'amount': -10,
                 }])
                 self.assert_(transaction2)
@@ -307,7 +321,58 @@ class TestTransaction(unittest.TestCase):
                 transaction3, = self.PaymentTransaction.create([{
                     'party': self.party3.id,
                     'address': self.party3.addresses[0].id,
-                    'gateway': self.beanstream_gateway.id,
+                    'gateway': self.beanstream_passcode_gateway.id,
+                    'amount': random.randint(1, 5),
+                }])
+                self.assert_(transaction3)
+                self.assertEqual(transaction3.state, 'draft')
+
+                # Capture transaction
+                with self.assertRaises(UserError):
+                    transaction3.capture_beanstream()
+
+    def test_0025_test_transaction_capture_with_hash(self):
+        """
+        Test capture transaction
+        """
+        with Transaction().start(DB_NAME, USER, context=CONTEXT):
+            self.setup_defaults()
+
+            with Transaction().set_context({'company': self.company.id}):
+                # Case1: transaction success
+                transaction1, = self.PaymentTransaction.create([{
+                    'party': self.party2.id,
+                    'address': self.party2.addresses[0].id,
+                    'gateway': self.beanstream_hash_gateway.id,
+                    'amount': random.randint(6, 10),
+                }])
+                self.assert_(transaction1)
+                self.assertEqual(transaction1.state, 'draft')
+
+                # Capture transaction
+                transaction1.capture_beanstream(card_info=self.card_data1)
+                self.assertEqual(transaction1.state, 'posted')
+
+                # Case2: Transaction Failure on invalid amount
+                transaction2, = self.PaymentTransaction.create([{
+                    'party': self.party1.id,
+                    'address': self.party1.addresses[0].id,
+                    'gateway': self.beanstream_hash_gateway.id,
+                    'amount': -10,
+                }])
+                self.assert_(transaction2)
+                self.assertEqual(transaction2.state, 'draft')
+
+                # Capture transaction
+                transaction2.capture_beanstream(card_info=self.card_data1)
+                self.assertEqual(transaction2.state, 'failed')
+
+                # Case IV: Assert error when new customer is there with
+                # no card info
+                transaction3, = self.PaymentTransaction.create([{
+                    'party': self.party3.id,
+                    'address': self.party3.addresses[0].id,
+                    'gateway': self.beanstream_hash_gateway.id,
                     'amount': random.randint(1, 5),
                 }])
                 self.assert_(transaction3)
