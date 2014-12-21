@@ -20,29 +20,56 @@ __all__ = [
 ]
 __metaclass__ = PoolMeta
 
+BEANSTREAM_STATES = {
+    'required': Eval('provider') == 'beanstream',
+    'invisible': Eval('provider') != 'beanstream'
+}
+
 
 class PaymentGatewayBeanstream:
     "Beanstream Gateway Implementation"
     __name__ = 'payment_gateway.gateway'
 
     beanstream_merchant_id = fields.Char(
-        'Merchant ID', states={
-            'required': Eval('provider') == 'beanstream',
-            'invisible': Eval('provider') != 'beanstream',
-        }, depends=['provider']
-    )
-    beanstream_pass_code = fields.Char(
-        'Pass Code', states={
-            'required': Eval('provider') == 'beanstream',
-            'invisible': Eval('provider') != 'beanstream',
-        }, depends=['provider']
+        'Merchant ID', states=BEANSTREAM_STATES, depends=['provider']
     )
     beanstream_currency = fields.Many2One(
-        'currency.currency', 'Currency', states={
-            'required': Eval('provider') == 'beanstream',
-            'invisible': Eval('provider') != 'beanstream',
-        }, depends=['provider']
+        'currency.currency', 'Currency', states=BEANSTREAM_STATES,
+        depends=['provider']
     )
+    beanstream_auth_mechanism = fields.Selection([
+        ('passcode', 'Passcode'),
+        ('hash', 'Hash SHA1')
+    ], 'Authentication Mechanism', states=BEANSTREAM_STATES)
+
+    beanstream_pass_code = fields.Char(
+        'Pass Code', states={
+            'required': (
+                (Eval('provider') == 'beanstream') &
+                (Eval('beanstream_auth_mechanism') == 'passcode')
+            ),
+            'invisible': ~(
+                (Eval('provider') == 'beanstream') &
+                (Eval('beanstream_auth_mechanism') == 'passcode')
+            )
+        }, depends=['provider', 'beanstream_auth_mechanism']
+    )
+    beanstream_hash_key = fields.Char(
+        "Hash Key", states={
+            'required': (
+                (Eval('provider') == 'beanstream') &
+                (Eval('beanstream_auth_mechanism') == 'hash')
+            ),
+            'invisible': ~(
+                (Eval('provider') == 'beanstream') &
+                (Eval('beanstream_auth_mechanism') == 'hash')
+            )
+        }, depends=['provider', 'beanstream_auth_mechanism']
+    )
+
+    @staticmethod
+    def default_auth_mechanism():
+        return 'passcode'
 
     @classmethod
     def get_providers(cls, values=None):
@@ -66,10 +93,16 @@ class PaymentGatewayBeanstream:
         """
         Returns a Beanstream client API
         """
+        validation_params = {}
+        if self.beanstream_auth_mechanism == 'passcode':
+            validation_params['pass_code'] = self.beanstream_pass_code
+        elif self.beanstream_auth_mechanism == 'hash':
+            validation_params['hash_key'] = self.beanstream_hash_key
+
         return BeanstreamClient(
-            self.beanstream_merchant_id,
-            self.beanstream_pass_code,
-            self.test
+            merchant_id=self.beanstream_merchant_id,
+            test=self.test,
+            **validation_params
         )
 
 

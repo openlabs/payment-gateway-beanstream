@@ -4,13 +4,14 @@
 
     Test tryton views and fields dependency.
 
-    :copyright: (C) 2013 by Openlabs Technologies & Consulting (P) Limited
+    :copyright: (C) 2013-2014 by Openlabs Technologies & Consulting (P) Limited
     :license: BSD, see LICENSE for more details.
 """
 import unittest
 
 import trytond.tests.test_tryton
-from .test_view_depends import TestViewsDepends
+from test_view_depends import TestViewsDepends
+from test_transaction import TestTransaction
 
 
 def suite():
@@ -20,6 +21,7 @@ def suite():
     test_suite = trytond.tests.test_tryton.suite()
     test_suite.addTests([
         unittest.TestLoader().loadTestsFromTestCase(TestViewsDepends),
+        unittest.TestLoader().loadTestsFromTestCase(TestTransaction),
     ])
     return test_suite
 
